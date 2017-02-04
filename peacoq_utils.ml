@@ -396,7 +396,7 @@ let rec string_of_constr_expr ce =
           [ string_of_location loc
           ; quote notation
           ; string_of_constr_notation_substitution cns
-            (* added for PeaCoq *)
+          (* added for PeaCoq *)
           ; string_of_int prec
           ; string_of_unparsing_list unp
           ])
@@ -518,10 +518,10 @@ and string_of_local_binder lb =
 
       | LocalRawAssum(lnl, bk, ce) ->
          ("LocalRawAssum",
-            [ string_of_list (string_of_located string_of_name) lnl
-            ; string_of_binder_kind bk
-            ; s ce
-            ])
+          [ string_of_list (string_of_located string_of_name) lnl
+          ; string_of_binder_kind bk
+          ; s ce
+          ])
 
       | LocalPattern(_, _, _) -> ("LocalPattern", ["TODO"])
 
