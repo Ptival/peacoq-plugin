@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euv
 
-branch="v8.6"
-commit="e7bb95f2ac0d151cfdccea7b769413b332489cd3"
+branch="trunk"
+commit="0d1438851ba3a0b9f76847abc42f3bf8ad26c4cb" # V8.6
 
 if [ ! -d coq/.git ]; then
   git clone https://github.com/coq/coq.git
