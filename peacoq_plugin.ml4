@@ -5,7 +5,7 @@ let contrib_name = "peacoq_plugin"
 
 DECLARE PLUGIN "peacoq_plugin"
 
-open Feedback
+(* open Feedback *)
 open Peacoq_utils
 open Pp
 open Printer
@@ -22,7 +22,9 @@ The boolean means:
 - [true]: do α-conv as a goal, avoiding names in context
 - [false]: just avoid names that appear in subterms
 *)
-let constr_expr_of_constr = Constrextern.extern_constr true
+(* Now, [constr_expr_of_constr] expects an EConstr.t instead of a Constr.t, so need to convert
+ **)
+let constr_expr_of_constr env sigma e = Constrextern.extern_constr true env sigma (EConstr.of_constr e)
 
 let ppstring_of_constr c =
   let pp = Printer.pr_constr c in
@@ -61,6 +63,8 @@ let open Context.Named.Declaration in
     ; ("type", string_of_constr_expr (convert typ))
     ]
 
+(* Based on ide/interface.mli, but replace occurrences of Pp.t with simply string for interop
+ **)
 module Interface = struct
 
   type goal = {
@@ -78,24 +82,43 @@ module Interface = struct
 
 end
 
+(* let process_goal sigma g =
+ *   let env = Goal.V82.env sigma g in
+ *   let min_env = Environ.reset_context env in
+ *   let id = Goal.uid g in
+ *   let ccl =
+ *     let norm_constr = Reductionops.nf_evar sigma (Goal.V82.concl sigma g) in
+ *     string_of_ppcmds (pr_goal_concl_style_env env sigma norm_constr)
+ *   in
+ *   let process_hyp d (env,l) =
+ *     let d = Context.Compacted.Declaration.map_constr (Reductionops.nf_evar sigma) d in
+ *     let d' = List.map (fun name -> match pi2 d with
+ *                                    | None -> Context.Named.Declaration.LocalAssum (name, pi3 d)
+ *                                    | Some value -> Context.Named.Declaration.LocalDef (name, value, pi3 d))
+ *                       (pi1 d) in
+ *       (List.fold_right Environ.push_named d' env,
+ *        (string_of_ppcmds (pr_var_list_decl env sigma d)) :: l)
+ *   in
+ *   let (_env, hyps) =
+ *     Context.NamedList.fold process_hyp
+ *       (Termops.compact_named_context (Environ.named_context env)) ~init:(min_env,[]) in
+ *   { Interface.goal_hyp = List.rev hyps; Interface.goal_ccl = ccl; Interface.goal_id = id; } *)
+
 let process_goal sigma g =
   let env = Goal.V82.env sigma g in
   let min_env = Environ.reset_context env in
   let id = Goal.uid g in
   let ccl =
-    let norm_constr = Reductionops.nf_evar sigma (Goal.V82.concl sigma g) in
-    string_of_ppcmds (pr_goal_concl_style_env env sigma norm_constr)
+    string_of_ppcmds ( (* added by Valentin *)
+        pr_goal_concl_style_env env sigma (Goal.V82.concl sigma g)
+      )
   in
   let process_hyp d (env,l) =
-    let d = Context.NamedList.Declaration.map_constr (Reductionops.nf_evar sigma) d in
-    let d' = List.map (fun name -> match pi2 d with
-                                   | None -> Context.Named.Declaration.LocalAssum (name, pi3 d)
-                                   | Some value -> Context.Named.Declaration.LocalDef (name, value, pi3 d))
-                      (pi1 d) in
+    let d' = Context.Compacted.Declaration.to_named_context d in
       (List.fold_right Environ.push_named d' env,
-       (string_of_ppcmds (pr_var_list_decl env sigma d)) :: l) in
+       (string_of_ppcmds (pr_compacted_decl env sigma d)) :: l) in
   let (_env, hyps) =
-    Context.NamedList.fold process_hyp
+    Context.Compacted.fold process_hyp
       (Termops.compact_named_context (Environ.named_context env)) ~init:(min_env,[]) in
   { Interface.goal_hyp = List.rev hyps; Interface.goal_ccl = ccl; Interface.goal_id = id; }
 
@@ -148,11 +171,11 @@ let process_goal sigma g =
 
 type peacoq_goal =
   { pphyps: int list
-  ; ppconcl: Term.constr
+  ; ppconcl: Constr.t
   }
 
 let string_of_goal env sigma (hyps, concl) =
-  let convert = constr_expr_of_constr env sigma in
+  let convert e = constr_expr_of_constr env sigma e in
   (* hyps are stored in reverse order *)
   let hyps = List.rev hyps in
   string_of_object
@@ -164,7 +187,7 @@ let format_for_peacoq env sigma g =
   let hyps = Environ.named_context_of_val (Goal.V82.nf_hyps sigma g) in
   let concl = Goal.V82.concl sigma g in
   string_of_object
-    [ ("ppgoal", string_of_goal env sigma (hyps, concl))
+    [ ("ppgoal", string_of_goal env sigma (hyps, EConstr.to_constr sigma concl))
     ; ("goal", Interface.string_of_goal (process_goal sigma g))
     ]
 
@@ -174,8 +197,8 @@ VERNAC COMMAND EXTEND PeaCoqQuery CLASSIFIED AS QUERY
 
      try
 
-     let (sigma, env) = Lemmas.get_current_context () in
-     let proof = Pfedit.get_pftreestate () in
+     let (sigma, env) = Pfedit.get_current_context () in
+     let proof = Proof_global.give_me_the_proof () in
      let goals = Proof.map_structured_proof proof (format_for_peacoq env) in
      print (string_of_pre_goals (fun s -> s) goals);
 

@@ -8,4 +8,4 @@
 *.o
 *.vo
 /Makefile.coq
-/Makefile.coq.bak
+/Makefile.coq.conf

@@ -1,11 +1,12 @@
+open CAst
 open Constr
 open Constrexpr
-open Decl_kinds
+(* open Decl_kinds *)
 open Globnames
-open Glob_term
+(* open Glob_term *)
 open Libnames
 open Misctypes
-open Notation
+(* open Notation *)
 open Notation_term
 open Ppextend
 open Proof
@@ -150,8 +151,8 @@ let string_of_ppcut p =
   mk_new (
       match p with
       | PpBrk(a, b) -> ("PpBrk", [string_of_int a; string_of_int b])
-      | PpTbrk(a, b) -> ("PpTBrk", [string_of_int a; string_of_int b])
-      | PpTab -> ("PpTab", [])
+      (* | PpTbrk(a, b) -> ("PpTBrk", [string_of_int a; string_of_int b]) *)
+      (* | PpTab -> ("PpTab", []) *)
       | PpFnl -> ("PpFnl", [])
     )
 
@@ -162,14 +163,32 @@ let string_of_ppbox p =
       | PpHOVB(a) -> ("PpHoVB", [string_of_int a])
       | PpHVB(a) -> ("PpHVB", [string_of_int a])
       | PpVB(a) -> ("PpVB", [string_of_int a])
-      | PpTB -> ("PpTB", [])
+      (* | PpTB -> ("PpTB", []) *)
     )
+
+let string_of_location loc =
+  let (start, stop) = Loc.unloc loc in
+  string_of_string_list
+    [ string_of_int start
+    ; string_of_int stop
+    ]
+
+let string_of_located string_of_x (loc, x) =
+  string_of_string_list
+    [ string_of_option string_of_location loc
+    ; string_of_x x
+    ]
 
 let rec string_of_unparsing u =
   mk_new (
       match u with
       | UnpMetaVar(i, p) ->
          ("UnpMetaVar",
+          [ string_of_int i
+          ; string_of_parenRelation p
+          ])
+      | UnpBinderMetaVar(i, p) ->
+         ("UnpBinderMetaVar",
           [ string_of_int i
           ; string_of_parenRelation p
           ])
@@ -189,7 +208,7 @@ let rec string_of_unparsing u =
       | UnpBox(b, l) ->
          ("UnpBox",
           [ string_of_ppbox b
-          ; string_of_unparsing_list l
+          ; string_of_list (string_of_located string_of_unparsing) l
           ])
       | UnpCut(c) ->
          ("UnpCut", [ string_of_ppcut c ])
@@ -200,7 +219,7 @@ and string_of_unparsing_list l = string_of_list string_of_unparsing l
 let string_of_prim_token t =
   mk_new (
       match t with
-      | Numeral(i) -> ("Numeral", [Bigint.to_string i])
+      | Numeral(s, b) -> ("Numeral", [quote s; string_of_bool b])
       | String(s) -> ("PrimTokenString", [quote s])
     )
 
@@ -223,19 +242,6 @@ let string_of_binder_kind bk =
           ])
     )
 
-let string_of_location loc =
-  let (start, stop) = Loc.unloc loc in
-  string_of_string_list
-    [ string_of_int start
-    ; string_of_int stop
-    ]
-
-let string_of_located string_of_x (loc, x) =
-  string_of_string_list
-    [ string_of_location loc
-    ; string_of_x x
-    ]
-
 let string_of_module_ident = string_of_id
 
 let string_of_dirpath p =
@@ -248,12 +254,25 @@ let string_of_qualid q =
     ; string_of_id id
     ]
 
-let string_of_reference r =
+let string_of_loc l =
+  string_of_object
+    [ ("TODO", "string_of_loc")
+    ]
+
+let string_of_reference_r r =
   mk_new (
       match r with
-      | Qualid(ql) -> ("Qualid", [string_of_located string_of_qualid ql])
-      | Ident(il) -> ("Ident", [string_of_located string_of_id il])
+      | Qualid(ql) -> ("Qualid", [string_of_qualid ql])
+      | Ident(il) -> ("Ident", [string_of_id il])
     )
+
+let string_of_cAst string_of_v c =
+  string_of_object
+    [ ("v",   with_val     string_of_v                                        c)
+    ; ("loc", with_loc_val (fun ?loc v -> string_of_option string_of_loc loc) c)
+    ]
+
+let string_of_reference = string_of_cAst string_of_reference_r
 
 let string_of_glob_sort_gen string_of_x gs =
   mk_new (
@@ -263,11 +282,19 @@ let string_of_glob_sort_gen string_of_x gs =
       | GType(x) -> ("GType", [string_of_x x])
     )
 
-let string_of_sort_info = string_of_list (string_of_located (fun s -> s))
+let string_of_sort_info = string_of_list (string_of_option (string_of_pair string_of_reference string_of_int))
 
-let string_of_glob_sort gs = string_of_glob_sort_gen string_of_sort_info gs
+let string_of_glob_sort = string_of_glob_sort_gen string_of_sort_info
 
-let string_of_level_info = string_of_option (string_of_located (fun s -> s))
+let string_of_universe_kind string_of_value u =
+  mk_new (
+      match u with
+      | UAnonymous -> ("UAnonymous", [])
+      | UUnknown -> ("UUnknown", [])
+      | UNamed(v) -> ("UNamed", [string_of_value v])
+    )
+
+let string_of_level_info = string_of_universe_kind string_of_reference
 
 let string_of_glob_level = string_of_glob_sort_gen string_of_level_info
 
@@ -297,24 +324,22 @@ let string_of_case_style cs =
       | RegularStyle -> ("RegularStyle", [])
     )
 
-let rec string_of_cases_pattern_expr e =
+let rec string_of_cases_pattern_expr_r string_of_cases_pattern_expr e =
   mk_new (
       match e with
       | CPatAlias(_) -> ("TODO_CPatAlias", [])
-      | CPatCstr(loc, r, cl1, cl2) ->
+      | CPatCstr(r, cl1, cl2) ->
          ("CPatCstr",
-          [ string_of_location loc
-          ; string_of_reference r
+          [ string_of_reference r
           ; string_of_option (string_of_list string_of_cases_pattern_expr) cl1
           ; string_of_list string_of_cases_pattern_expr cl2
           ])
-      | CPatAtom(loc, ro) ->
+      | CPatAtom(ro) ->
          ("CPatAtom",
-          [ string_of_location loc
-          ; string_of_option string_of_reference ro
+          [ string_of_option string_of_reference ro
           ])
       | CPatOr(_) -> ("TODO_CPatOr", [])
-      | CPatNotation(loc, n, cpns, cpel) ->
+      | CPatNotation(n, cpns, cpel) ->
          let (unp, prec) =
            begin
              match n with
@@ -323,8 +348,7 @@ let rec string_of_cases_pattern_expr e =
            end
          in
          ("CPatNotation",
-          [ string_of_location loc
-          ; quote n
+          [ quote n
           ; string_of_pair
               (string_of_list string_of_cases_pattern_expr)
               (string_of_list (string_of_list string_of_cases_pattern_expr))
@@ -334,23 +358,25 @@ let rec string_of_cases_pattern_expr e =
           ; string_of_int prec
           ; string_of_unparsing_list unp
           ])
-      | CPatPrim(loc, tok) ->
+      | CPatPrim(tok) ->
          ("CPatPrim",
-          [ string_of_location loc
-          ; string_of_prim_token tok
+          [ string_of_prim_token tok
           ])
       | CPatRecord(_) -> ("TODO_CPatRecord", [])
-      | CPatDelimiters(loc, s, cases) ->
+      | CPatDelimiters(s, cases) ->
          ("CPatDelimiters",
-          [ string_of_location loc
-          ; quote s
+          [ quote s
           ; string_of_cases_pattern_expr cases
           ])
       | CPatCast(_) -> ("TODO_CPatCast", [])
     )
 
+and string_of_cases_pattern_expr e = string_of_cAst (string_of_cases_pattern_expr_r string_of_cases_pattern_expr) e
+
 let string_of_constructor (ind, i) =
   mk_new ("Constructor", [string_of_inductive ind; string_of_int i])
+
+let string_of_lname = string_of_cAst string_of_name
 
 let string_of_global_reference gr =
   mk_new (
@@ -361,14 +387,13 @@ let string_of_global_reference gr =
       | ConstructRef(c) -> ("ConstructRef", [string_of_constructor c])
     )
 
-let rec string_of_constr_expr ce =
+let rec string_of_constr_expr_r ce =
   mk_new (
       match ce with
 
-      | CApp(loc, (pf, ce), l) ->
+      | CApp((pf, ce), l) ->
          ("CApp",
-          [ string_of_location loc
-          ; string_of_string_list
+          [ string_of_string_list
               [ string_of_proj_flag pf
               ; string_of_constr_expr ce
               ]
@@ -377,14 +402,14 @@ let rec string_of_constr_expr ce =
                 string_of_string_list
                   [ string_of_constr_expr ce
                   ; string_of_option
-                      (string_of_located string_of_explicitation)
+                      (string_of_cAst string_of_explicitation)
                       elo
                   ]
               )
               l
           ])
 
-      | CNotation(loc, notation, cns) ->
+      | CNotation(notation, cns) ->
          let (unp, prec) =
            begin
              match notation with
@@ -393,24 +418,21 @@ let rec string_of_constr_expr ce =
            end
          in
          ("CNotation",
-          [ string_of_location loc
-          ; quote notation
+          [ quote notation
           ; string_of_constr_notation_substitution cns
           (* added for PeaCoq *)
           ; string_of_int prec
           ; string_of_unparsing_list unp
           ])
 
-      | CPrim(loc, t) ->
+      | CPrim(t) ->
          ("CPrim",
-          [ string_of_location loc
-          ; string_of_prim_token t
+          [ string_of_prim_token t
           ])
 
-      | CProdN(loc, bl, c) ->
+      | CProdN(bl, c) ->
          ("CProdN",
-          [ string_of_location loc
-          ; string_of_list string_of_binder_expr bl
+          [ string_of_list string_of_local_binder_expr bl
           ; string_of_constr_expr c
           ])
 
@@ -420,50 +442,46 @@ let rec string_of_constr_expr ce =
           ; string_of_option string_of_instance_expr us
           ])
 
-      | CSort(loc, gs) ->
+      | CSort(gs) ->
          ("CSort",
-          [ string_of_location loc
-          ; string_of_glob_sort gs
+          [ string_of_glob_sort gs
           ])
 
       | CFix(_) -> ("TODO_CFix", [])
 
       | CCoFix(_) -> ("TODO_CCoFix", [])
 
-      | CLambdaN(loc, bel, ce) ->
+      | CLambdaN(bel, ce) ->
          ("CLambdaN",
-          [ string_of_location loc
-          ; string_of_list string_of_binder_expr bel
+          [ string_of_list string_of_local_binder_expr bel
           ; string_of_constr_expr ce
           ])
 
-      | CLetIn(loc, lname, ce1, ce2) ->
+      | CLetIn(lname, ce1, ce2, ce3) ->
          ("CLetIn",
-          [ string_of_location loc
-          ; string_of_located string_of_name lname
+          [ string_of_lname lname
           ; string_of_constr_expr ce1
-          ; string_of_constr_expr ce2
+          ; string_of_option string_of_constr_expr ce2
+          ; string_of_constr_expr ce3
           ])
 
       | CAppExpl(_) -> ("TODO_CAppExpl", [])
 
       | CRecord(_) -> ("TODO_CRecord", [])
 
-      | CCases(loc, style, ceo, casel, branchl) ->
+      | CCases(style, ceo, casel, branchl) ->
          ("CCases",
-          [ string_of_location loc
-          ; string_of_case_style style
+          [ string_of_case_style style
           ; string_of_option string_of_constr_expr ceo
           ; string_of_list string_of_case_expr casel
           ; string_of_list string_of_branch_expr branchl
           ])
 
-      | CLetTuple(loc, nll, nlo_ceo, ce1, ce2) ->
+      | CLetTuple(nll, nlo_ceo, ce1, ce2) ->
          ("CLetTuple",
-          [ string_of_location loc
-          ; string_of_list (string_of_located string_of_name) nll
+          [ string_of_list string_of_lname nll
           ; string_of_pair
-              (string_of_option (string_of_located string_of_name))
+              (string_of_option string_of_lname)
               (string_of_option string_of_constr_expr)
               nlo_ceo
           ; string_of_constr_expr ce1
@@ -482,68 +500,96 @@ let rec string_of_constr_expr ce =
 
       | CGeneralization(_) -> ("TODO_CGeneralization", [])
 
-      | CDelimiters(loc, s, ce) ->
+      | CDelimiters(s, ce) ->
          ("CDelimiters",
-          [ string_of_location loc
-          ; quote s
+          [ quote s
           ; string_of_constr_expr ce
           ])
 
     )
 
-and string_of_binder_expr (nll, bk, c) =
-  string_of_string_list
-    [ string_of_list (string_of_located string_of_name) nll
-    ; string_of_binder_kind bk
-    ; string_of_constr_expr c
-    ]
+and string_of_constr_expr e = string_of_cAst string_of_constr_expr_r e
 
-and string_of_constr_notation_substitution (cel, cell, lbll) =
+(* and string_of_binder_expr (nll, bk, c) =
+ *   string_of_string_list
+ *     [ string_of_list (string_of_located string_of_name) nll
+ *     ; string_of_binder_kind bk
+ *     ; string_of_constr_expr c
+ *     ] *)
+
+and string_of_constr_notation_substitution (cel, cell, cpel, lbll) =
   string_of_string_list
     [ string_of_list string_of_constr_expr cel
     ; string_of_list (string_of_list string_of_constr_expr) cell
-    ; string_of_list (string_of_list string_of_local_binder) lbll
+    ; string_of_list string_of_cases_pattern_expr cpel
+    ; string_of_list (string_of_list string_of_local_binder_expr) lbll
     ]
 
-and string_of_local_binder lb =
-  let s = string_of_constr_expr in
+(* and string_of_local_binder lb =
+ *   let s = string_of_constr_expr in
+ *   mk_new (
+ *       match lb with
+ *
+ *       | LocalRawDef(ln, ce) ->
+ *          ("LocalRawDef",
+ *           [ string_of_located string_of_name ln
+ *           ; s ce
+ *           ]
+ *          )
+ *
+ *       | LocalRawAssum(lnl, bk, ce) ->
+ *          ("LocalRawAssum",
+ *           [ string_of_list (string_of_located string_of_name) lnl
+ *           ; string_of_binder_kind bk
+ *           ; s ce
+ *           ]
+ *          )
+ *
+ *       | LocalPattern(_, _, _) -> ("LocalPattern", ["TODO"])
+ *
+ *     ) *)
+
+and string_of_local_binder_expr e =
   mk_new (
-      match lb with
-
-      | LocalRawDef(ln, ce) ->
-         ("LocalRawDef",
-          [ string_of_located string_of_name ln
-          ; s ce
-          ])
-
-      | LocalRawAssum(lnl, bk, ce) ->
-         ("LocalRawAssum",
-          [ string_of_list (string_of_located string_of_name) lnl
+      match e with
+      | CLocalAssum(lnl, bk, ce) ->
+         ("CLocalAssum",
+          [ string_of_list string_of_lname lnl
           ; string_of_binder_kind bk
-          ; s ce
-          ])
-
-      | LocalPattern(_, _, _) -> ("LocalPattern", ["TODO"])
-
+          ; string_of_constr_expr ce
+          ]
+         )
+      | CLocalDef(ln, ce, oce) ->
+         ("CLocalAssum",
+          [ string_of_lname ln
+          ; string_of_constr_expr ce
+          ; string_of_option string_of_constr_expr oce
+          ]
+         )
+      | CLocalPattern(c) ->
+         ("CLocalPattern",
+          [ string_of_cAst (string_of_pair
+                              string_of_cases_pattern_expr
+                              (string_of_option string_of_constr_expr)
+              ) c
+          ]
+         )
     )
 
-and string_of_case_expr (ce, nlo, cpeo) =
+and string_of_case_expr (ce, lno, cpeo) =
   string_of_string_list
     [ string_of_constr_expr ce
     ; string_of_string_list
-        [ string_of_option (string_of_located string_of_name) nlo
+        [ string_of_option (string_of_lname) lno
         ; string_of_option string_of_cases_pattern_expr cpeo
         ]
     ]
 
-and string_of_branch_expr (loc, cpelll, ce) =
-  string_of_string_list
-    [ string_of_location loc
-    ; string_of_list
-        (string_of_located (string_of_list string_of_cases_pattern_expr))
-        cpelll
-    ; string_of_constr_expr ce
-    ]
+and string_of_branch_expr e =
+  string_of_cAst (string_of_pair
+                    (string_of_list (string_of_list string_of_cases_pattern_expr))
+                    (string_of_constr_expr)
+    ) e
 
 let string_of_pre_goals string_of_a pgs =
   string_of_object
